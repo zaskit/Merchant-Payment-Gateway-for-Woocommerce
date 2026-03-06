@@ -355,9 +355,11 @@ class MPG_VProcessor_3D extends WC_Payment_Gateway {
             wc_reduce_stock_levels( $order_id );
             return array( 'result' => 'success', 'redirect' => $this->get_return_url( $order ) );
         } else {
-            $err = $result['result']['errorDetail'] ?? 'Payment failed';
-            $order->update_status( 'failed', $err );
-            wc_add_notice( $err, 'error' );
+            $error_msg  = $result['result']['errorDetail'] ?? 'Payment failed';
+            $error_code = $result['result']['errorCode'] ?? '';
+            $this->logger->log( 'Payment failed. Code: ' . $error_code . ' Detail: ' . $error_msg );
+            $order->update_status( 'failed', 'VP3D: [' . $error_code . '] ' . $error_msg );
+            wc_add_notice( MPG_VProcessor_API::friendly_error( $error_code ), 'error' );
             return array( 'result' => 'failure' );
         }
     }
