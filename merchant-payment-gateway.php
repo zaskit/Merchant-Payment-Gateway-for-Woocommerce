@@ -109,26 +109,83 @@ add_action( 'init', function () {
 add_action( 'template_redirect', function () {
     global $wp_query;
 
-    /* E-Processor callback */
+    /* E-Processor callback — processor sends JSON body */
     if ( isset( $wp_query->query_vars['eupaymentz-callback'] ) ) {
-        if ( empty( $_POST ) ) { wp_die( 'Invalid callback', '', array( 'response' => 400 ) ); }
-        $gateways = WC()->payment_gateways()->payment_gateways();
-        foreach ( array( 'mpg_eprocessor_2d', 'mpg_eprocessor_3d', 'mpg_eprocessor_hosted' ) as $id ) {
-            if ( isset( $gateways[ $id ] ) && $gateways[ $id ]->enabled === 'yes' ) {
-                $gateways[ $id ]->process_callback( $_POST );
-                break;
+        // Read JSON body (EuPaymentz sends application/json, not form-encoded)
+        $raw  = file_get_contents( 'php://input' );
+        $data = json_decode( $raw, true );
+
+        // Fall back to POST if JSON decode fails (backwards compat)
+        if ( empty( $data ) || ! is_array( $data ) ) {
+            $data = $_POST;
+        }
+
+        if ( empty( $data ) ) {
+            status_header( 200 );
+            echo 'OK';
+            exit;
+        }
+
+        // Route to the correct gateway based on the order's payment method
+        $order_id = isset( $data['resp_merchant_data1'] ) ? intval( $data['resp_merchant_data1'] ) : 0;
+        $routed   = false;
+
+        if ( $order_id ) {
+            $order = wc_get_order( $order_id );
+            if ( $order ) {
+                $payment_method = $order->get_payment_method();
+                $gateways       = WC()->payment_gateways()->payment_gateways();
+                if ( isset( $gateways[ $payment_method ] ) && method_exists( $gateways[ $payment_method ], 'process_callback' ) ) {
+                    $gateways[ $payment_method ]->process_callback( $data );
+                    $routed = true;
+                }
             }
         }
+
+        // Fallback: try first enabled EP gateway
+        if ( ! $routed ) {
+            $gateways = WC()->payment_gateways()->payment_gateways();
+            foreach ( array( 'mpg_eprocessor_2d', 'mpg_eprocessor_3d', 'mpg_eprocessor_hosted' ) as $id ) {
+                if ( isset( $gateways[ $id ] ) && $gateways[ $id ]->enabled === 'yes' ) {
+                    $gateways[ $id ]->process_callback( $data );
+                    break;
+                }
+            }
+        }
+
+        status_header( 200 );
+        echo 'OK';
         exit;
     }
 
-    /* E-Processor return */
+    /* E-Processor return — processor redirects customer via GET */
     if ( isset( $wp_query->query_vars['eupaymentz-return'] ) ) {
-        $gateways = WC()->payment_gateways()->payment_gateways();
-        foreach ( array( 'mpg_eprocessor_2d', 'mpg_eprocessor_3d', 'mpg_eprocessor_hosted' ) as $id ) {
-            if ( isset( $gateways[ $id ] ) && $gateways[ $id ]->enabled === 'yes' ) {
-                $gateways[ $id ]->process_return( $_REQUEST );
-                break;
+        $data = $_REQUEST;
+
+        // Route to the correct gateway based on the order's payment method
+        $order_id = isset( $data['order_id'] ) ? intval( $data['order_id'] ) : 0;
+        $routed   = false;
+
+        if ( $order_id ) {
+            $order = wc_get_order( $order_id );
+            if ( $order ) {
+                $payment_method = $order->get_payment_method();
+                $gateways       = WC()->payment_gateways()->payment_gateways();
+                if ( isset( $gateways[ $payment_method ] ) && method_exists( $gateways[ $payment_method ], 'process_return' ) ) {
+                    $gateways[ $payment_method ]->process_return( $data );
+                    $routed = true;
+                }
+            }
+        }
+
+        // Fallback: try first enabled EP gateway
+        if ( ! $routed ) {
+            $gateways = WC()->payment_gateways()->payment_gateways();
+            foreach ( array( 'mpg_eprocessor_2d', 'mpg_eprocessor_3d', 'mpg_eprocessor_hosted' ) as $id ) {
+                if ( isset( $gateways[ $id ] ) && $gateways[ $id ]->enabled === 'yes' ) {
+                    $gateways[ $id ]->process_return( $data );
+                    break;
+                }
             }
         }
         exit;

@@ -153,9 +153,6 @@ class MPG_EProcessor_2D extends WC_Payment_Gateway {
 
         $this->logger->log( 'Response: ' . wp_json_encode( $result ) );
 
-        // Store merchant payment ID
-        $order->update_meta_data( '_mpg_ep_merchant_payment_id', $data['merchant_payment_id'] );
-
         // Check for redirect (shouldn't happen in direct mode, but handle it)
         if ( isset( $result['isDirectResult'] ) && $result['isDirectResult'] === false ) {
             $redirect_url = MPG_EProcessor_API::build_redirect_url( $result );
@@ -216,7 +213,7 @@ class MPG_EProcessor_2D extends WC_Payment_Gateway {
             'option'           => '',
         );
         if ( $amount !== null ) {
-            $data['transac_amount'] = $amount;
+            $data['transac_amount'] = number_format( (float) $amount, 2, '.', '' );
         }
 
         $response = MPG_EProcessor_API::post( MPG_EProcessor_API::REFUND_URL, $data );
@@ -243,16 +240,21 @@ class MPG_EProcessor_2D extends WC_Payment_Gateway {
         $order = wc_get_order( $order_id );
         if ( ! $order ) return;
 
-        // Verify order key
-        if ( isset( $data['resp_merchant_data2'] ) && $data['resp_merchant_data2'] !== $order->get_order_key() ) {
-            $this->logger->log( 'Order key mismatch in callback' );
-            return;
+        // Verify order key (compare first 20 chars — API response truncates to varchar(20))
+        if ( isset( $data['resp_merchant_data2'] ) && ! empty( $data['resp_merchant_data2'] ) ) {
+            if ( substr( $order->get_order_key(), 0, 20 ) !== substr( $data['resp_merchant_data2'], 0, 20 ) ) {
+                $this->logger->log( 'Order key mismatch in callback' );
+                return;
+            }
         }
 
         if ( $order->has_status( array( 'processing', 'completed' ) ) ) return;
 
+        // Use the passphrase from the gateway that processed this order
+        $passphrase = $this->get_passphrase_for_order( $order );
+
         // Verify SHA
-        if ( ! MPG_EProcessor_API::verify_response_sha( $this->account_passphrase, $data ) ) {
+        if ( ! MPG_EProcessor_API::verify_response_sha( $passphrase, $data ) ) {
             $this->logger->log( 'Callback SHA verification failed!' );
             return;
         }
@@ -274,6 +276,21 @@ class MPG_EProcessor_2D extends WC_Payment_Gateway {
         }
     }
 
+    /**
+     * Get the correct passphrase for an order's payment method.
+     */
+    private function get_passphrase_for_order( $order ) {
+        $method = $order->get_payment_method();
+        if ( $method === $this->id ) {
+            return $this->account_passphrase;
+        }
+        $gateways = WC()->payment_gateways()->payment_gateways();
+        if ( isset( $gateways[ $method ] ) && isset( $gateways[ $method ]->account_passphrase ) ) {
+            return $gateways[ $method ]->account_passphrase;
+        }
+        return $this->account_passphrase;
+    }
+
     /* ─── Return handler (shared by all E-Processor types) ─── */
     public function process_return( $data ) {
         $this->logger->log( 'EP Return: ' . wp_json_encode( $data ) );
@@ -284,22 +301,28 @@ class MPG_EProcessor_2D extends WC_Payment_Gateway {
         $order = wc_get_order( $order_id );
         if ( ! $order ) { wp_redirect( wc_get_page_permalink( 'cart' ) ); exit; }
 
-        // Process response data if present
-        if ( isset( $data['resp_trans_status'] ) ) {
-            if ( ! $order->has_status( array( 'processing', 'completed' ) ) ) {
-                if ( MPG_EProcessor_API::verify_response_sha( $this->account_passphrase, $data ) ) {
-                    $parsed = MPG_EProcessor_API::parse_transaction_status( $data );
-                    $order->update_meta_data( '_mpg_ep_transaction_id', $parsed['transaction_id'] );
-                    if ( $parsed['is_success'] ) {
-                        $order->save();
-                        $order->payment_complete( $parsed['transaction_id'] );
-                    } elseif ( $parsed['is_pending'] ) {
-                        $order->update_status( 'on-hold', 'Pending' );
-                        $order->save();
-                    } else {
-                        $order->update_status( 'failed', $parsed['description'] );
-                        $order->save();
-                    }
+        // If order is already finalized (by direct response or callback), just redirect
+        if ( $order->has_status( array( 'processing', 'completed' ) ) ) {
+            wp_redirect( $this->get_return_url( $order ) );
+            exit;
+        }
+
+        // Process response data if present and order not yet finalized
+        if ( isset( $data['resp_trans_status'] ) && ! $order->has_status( array( 'processing', 'completed' ) ) ) {
+            $passphrase = $this->get_passphrase_for_order( $order );
+            if ( MPG_EProcessor_API::verify_response_sha( $passphrase, $data ) ) {
+                $parsed = MPG_EProcessor_API::parse_transaction_status( $data );
+                $order->update_meta_data( '_mpg_ep_transaction_id', $parsed['transaction_id'] );
+                if ( $parsed['is_success'] ) {
+                    $order->save();
+                    $order->payment_complete( $parsed['transaction_id'] );
+                    $order->add_order_note( 'E-Processor return: approved. TX: ' . $parsed['transaction_id'] );
+                } elseif ( $parsed['is_pending'] ) {
+                    $order->update_status( 'on-hold', 'Pending via return. TX: ' . $parsed['transaction_id'] );
+                    $order->save();
+                } else {
+                    $order->update_status( 'failed', $parsed['description'] );
+                    $order->save();
                 }
             }
         }

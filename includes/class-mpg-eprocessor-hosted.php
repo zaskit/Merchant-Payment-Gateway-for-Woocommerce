@@ -101,7 +101,6 @@ class MPG_EProcessor_Hosted extends WC_Payment_Gateway {
         }
 
         $this->logger->log( 'Response: ' . wp_json_encode( $result ) );
-        $order->update_meta_data( '_mpg_ep_merchant_payment_id', $data['merchant_payment_id'] );
 
         // Hosted should always get a redirect
         if ( isset( $result['isDirectResult'] ) && $result['isDirectResult'] === false ) {
@@ -147,7 +146,7 @@ class MPG_EProcessor_Hosted extends WC_Payment_Gateway {
             'trans_id'         => $tx,
             'option'           => '',
         );
-        if ( $amount !== null ) $data['transac_amount'] = $amount;
+        if ( $amount !== null ) $data['transac_amount'] = number_format( (float) $amount, 2, '.', '' );
 
         $response = MPG_EProcessor_API::post( MPG_EProcessor_API::REFUND_URL, $data );
         $result   = MPG_EProcessor_API::parse_response( $response );

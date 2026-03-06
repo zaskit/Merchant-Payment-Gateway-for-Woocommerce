@@ -62,12 +62,27 @@ class MPG_EProcessor_API {
     }
 
     public static function build_base_data( $gateway, $order ) {
+        // Idempotent payment ID: same on double-click, new on retry after failure
+        $existing_pid = $order->get_meta( '_mpg_ep_merchant_payment_id' );
+        if ( $existing_pid && $order->has_status( 'pending' ) ) {
+            $payment_id = $existing_pid;
+        } else {
+            $attempt    = (int) $order->get_meta( '_mpg_ep_attempt' ) + 1;
+            $payment_id = $gateway->transaction_prefix . $order->get_id() . '-' . $attempt;
+            $order->update_meta_data( '_mpg_ep_attempt', $attempt );
+            $order->update_meta_data( '_mpg_ep_merchant_payment_id', $payment_id );
+            $order->save();
+        }
+
+        // Format amount as decimal with 2 places (API requires e.g. "10000.00", no commas)
+        $amount = number_format( (float) $order->get_total(), 2, '.', '' );
+
         $data = array(
             'account_id'              => $gateway->account_id,
             'account_password'        => $gateway->account_password,
             'action_type'             => 'payment',
             'account_gateway'         => $gateway->account_gateway,
-            'merchant_payment_id'     => $gateway->transaction_prefix . $order->get_id() . '-' . time(),
+            'merchant_payment_id'     => $payment_id,
             'cust_email'              => $order->get_billing_email(),
             'cust_billing_last_name'  => $order->get_billing_last_name(),
             'cust_billing_first_name' => $order->get_billing_first_name(),
@@ -78,13 +93,13 @@ class MPG_EProcessor_API {
             'cust_billing_country'    => $order->get_billing_country(),
             'cust_billing_phone'      => preg_replace( '/\D/', '', $order->get_billing_phone() ),
             'transac_products_name'   => self::get_order_items_string( $order ),
-            'transac_amount'          => $order->get_total(),
+            'transac_amount'          => $amount,
             'transac_currency_code'   => $order->get_currency(),
             'customer_ip'             => $order->get_customer_ip_address(),
             'merchant_url_return'     => home_url( 'eupaymentz-return' ) . '?order_id=' . $order->get_id(),
             'merchant_url_callback'   => home_url( 'eupaymentz-callback' ),
-            'merchant_data1'          => $order->get_id(),
-            'merchant_data2'          => $order->get_order_key(),
+            'merchant_data1'          => (string) $order->get_id(),
+            'merchant_data2'          => substr( $order->get_order_key(), 0, 20 ),
             'option'                  => '',
         );
 
