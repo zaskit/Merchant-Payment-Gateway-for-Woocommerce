@@ -1,0 +1,101 @@
+/* === Merchant Payment Gateway - Classic Checkout Card Forms === */
+
+.mpg-card-form {
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 20px;
+    margin: 8px 0;
+}
+
+.mpg-card-form .mpg-field {
+    margin-bottom: 14px;
+}
+
+.mpg-card-form .mpg-field:last-child {
+    margin-bottom: 0;
+}
+
+.mpg-card-form .mpg-field label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: #374151;
+    margin-bottom: 5px;
+    letter-spacing: 0.01em;
+}
+
+.mpg-card-form .mpg-field input[type="text"],
+.mpg-card-form .mpg-field input[type="tel"],
+.mpg-card-form .mpg-field input[type="number"] {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 15px;
+    line-height: 1.4;
+    color: #111827;
+    background: #fff;
+    transition: border-color 0.15s, box-shadow 0.15s;
+    box-sizing: border-box;
+    -webkit-appearance: none;
+    appearance: none;
+}
+
+.mpg-card-form .mpg-field input:focus {
+    outline: none;
+    border-color: #6366f1;
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
+}
+
+.mpg-card-form .mpg-field input::placeholder {
+    color: #9ca3af;
+}
+
+.mpg-card-form .mpg-row {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 14px;
+}
+
+.mpg-card-form .mpg-row .mpg-field {
+    flex: 1;
+    margin-bottom: 0;
+}
+
+/* Secure badge */
+.mpg-secure-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: #6b7280;
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid #f3f4f6;
+}
+
+.mpg-secure-badge svg {
+    flex-shrink: 0;
+}
+
+/* Hosted payment notice */
+.mpg-hosted-notice {
+    font-size: 14px;
+    color: #6b7280;
+    line-height: 1.5;
+}
+
+/* Responsive */
+@media (max-width: 480px) {
+    .mpg-card-form {
+        padding: 14px;
+    }
+    .mpg-card-form .mpg-row {
+        flex-direction: column;
+        gap: 14px;
+    }
+    .mpg-card-form .mpg-field input[type="text"] {
+        font-size: 16px; /* Prevent iOS zoom */
+    }
+}
