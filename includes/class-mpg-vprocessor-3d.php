@@ -220,7 +220,7 @@ class MPG_VProcessor_3D extends WC_Payment_Gateway {
             'cardDetails' => array(
                 'cardHolderName'  => $card_holder,
                 'cardNumber'      => $card_number,
-                'cvv'             => $cvv,
+                'cvv'             => intval( $cvv ),
                 'expirationMonth' => sprintf( '%02d', $exp_month ),
                 'expirationYear'  => intval( $exp_year ),
             ),

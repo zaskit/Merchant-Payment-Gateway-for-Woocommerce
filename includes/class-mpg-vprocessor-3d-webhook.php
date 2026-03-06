@@ -429,23 +429,36 @@ class MPG_VProcessor_3D_Webhook {
 
                 wp_redirect( $order->get_checkout_order_received_url() );
                 exit;
+            }
 
-            } elseif ( in_array( $threed_status, array( 'DECLINED', 'REJECTED', 'FAILED' ), true ) ) {
-                $order->update_status( 'failed', 'VP3D 3DS challenge failed. Status: ' . $threed_status );
-                if ( $debug ) $logger->debug( 'Order failed via 3DS result: ' . $threed_status, $ctx );
-                wc_add_notice( 'Payment was declined. Please try again.', 'error' );
-                wp_redirect( wc_get_checkout_url() );
-                exit;
+            // For DECLINED/REJECTED/FAILED: do NOT trust the 3DS return result.
+            // The 3DS return URL is just a customer redirect — not the source of truth.
+            // The definitive status comes via webhook. Log it and fall through to polling.
+            if ( in_array( $threed_status, array( 'DECLINED', 'REJECTED', 'FAILED' ), true ) ) {
+                if ( $debug ) $logger->debug( '3DS return says ' . $threed_status . ' — ignoring, will wait for webhook as source of truth', $ctx );
+                $order->add_order_note( 'VP3D: 3DS return status: ' . $threed_status . '. Awaiting webhook for definitive result.' );
+                $order->update_meta_data( '_mpg_vp3d_3ds_return_status', $threed_status );
+                $order->save();
             }
         }
 
-        // Fallback: no 3DS result or unknown status — set on-hold and wait for webhook
+        // Set order to on-hold and redirect to thank-you page with polling overlay
+        // The webhook will deliver the final approved/declined status
         if ( $order->has_status( 'pending' ) ) {
             $order->update_status( 'on-hold', 'Customer returned from 3DS challenge. Awaiting webhook confirmation.' );
             if ( $debug ) $logger->debug( 'Order set to on-hold, awaiting webhook after 3DS return', $ctx );
         }
 
-        wp_redirect( $order->get_checkout_order_received_url() );
+        // Redirect to thank-you page with polling so customer waits for webhook
+        $polling_url = add_query_arg( array(
+            'mpg_vp3d_poll' => '1',
+            'order_id'      => $order_id,
+            'key'           => $order->get_order_key(),
+        ), $order->get_checkout_order_received_url() );
+
+        if ( $debug ) $logger->debug( 'Redirecting to polling page: ' . $polling_url, $ctx );
+
+        wp_redirect( $polling_url );
         exit;
     }
 }
