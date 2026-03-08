@@ -350,8 +350,13 @@ class MPG_VProcessor_3D extends WC_Payment_Gateway {
             return array( 'result' => 'success', 'redirect' => $polling_url );
 
         } elseif ( $status === 'approved' ) {
-            $order->payment_complete( $result['transactionId'] );
+            $pct = floatval( $this->get_option( 'percentage_on_top', '' ) );
+            if ( $pct > 0 ) {
+                $order->update_meta_data( '_mpg_vp3d_fee_pct', $pct );
+            }
             $order->add_order_note( 'V-Processor 3D payment approved (direct). TX: ' . $result['transactionId'] );
+            $order->save();
+            $order->payment_complete( $result['transactionId'] );
             wc_reduce_stock_levels( $order_id );
             return array( 'result' => 'success', 'redirect' => $this->get_return_url( $order ) );
         } else {

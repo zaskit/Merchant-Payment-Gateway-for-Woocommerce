@@ -120,6 +120,16 @@ class MPG_EProcessor_Hosted extends WC_Payment_Gateway {
 
             if ( $parsed['is_success'] ) {
                 $order->save();
+                // Refresh to check if callback already completed
+                clean_post_cache( $order_id );
+                if ( function_exists( 'wp_cache_delete' ) ) {
+                    wp_cache_delete( 'order-' . $order_id, 'orders' );
+                    wp_cache_delete( $order_id, 'posts' );
+                }
+                $fresh = wc_get_order( $order_id );
+                if ( ! $fresh || $fresh->has_status( array( 'processing', 'completed' ) ) ) {
+                    return array( 'result' => 'success', 'redirect' => $this->get_return_url( $order ) );
+                }
                 $order->payment_complete( $parsed['transaction_id'] );
                 return array( 'result' => 'success', 'redirect' => $this->get_return_url( $order ) );
             }

@@ -42,8 +42,7 @@ trait MPG_Descriptor_Trait {
     protected function init_descriptor_hooks() {
         add_action( 'woocommerce_thankyou_' . $this->id, array( $this, 'show_descriptor_thankyou' ), 5 );
         add_action( 'woocommerce_thankyou', array( $this, 'show_descriptor_thankyou_fallback' ), 5 );
-        add_action( 'woocommerce_email_after_order_table', array( $this, 'show_descriptor_email' ), 10, 4 );
-        add_action( 'woocommerce_email_order_details', array( $this, 'show_descriptor_email' ), 5, 4 );
+        // Email descriptor hooks are now registered as standalone functions in the main plugin file
     }
 
     public function show_descriptor_thankyou( $order_id ) {

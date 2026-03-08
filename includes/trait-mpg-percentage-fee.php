@@ -29,7 +29,7 @@ trait MPG_Percentage_Fee_Trait {
     }
 
     protected function init_percentage_fee_hooks() {
-        add_action( 'woocommerce_cart_calculate_fees', array( $this, 'mpg_add_percentage_fee' ) );
+        // Fee calculation is now registered as a standalone function in the main plugin file
         add_action( 'wp_footer', array( $this, 'mpg_checkout_refresh_script' ) );
     }
 

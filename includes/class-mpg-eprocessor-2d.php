@@ -178,6 +178,16 @@ class MPG_EProcessor_2D extends WC_Payment_Gateway {
 
             if ( $parsed['is_success'] ) {
                 $order->save();
+                // Refresh to check if callback already completed
+                clean_post_cache( $order_id );
+                if ( function_exists( 'wp_cache_delete' ) ) {
+                    wp_cache_delete( 'order-' . $order_id, 'orders' );
+                    wp_cache_delete( $order_id, 'posts' );
+                }
+                $fresh = wc_get_order( $order_id );
+                if ( ! $fresh || $fresh->has_status( array( 'processing', 'completed' ) ) ) {
+                    return array( 'result' => 'success', 'redirect' => $this->get_return_url( $order ) );
+                }
                 $order->payment_complete( $parsed['transaction_id'] );
                 $order->add_order_note( 'E-Processor 2D payment completed. TX: ' . $parsed['transaction_id'] );
                 return array( 'result' => 'success', 'redirect' => $this->get_return_url( $order ) );
@@ -264,6 +274,15 @@ class MPG_EProcessor_2D extends WC_Payment_Gateway {
         $order->update_meta_data( '_mpg_ep_status', $parsed['status'] );
 
         if ( $parsed['is_success'] ) {
+            // Refresh order from DB — callback may race with direct response
+            clean_post_cache( $order_id );
+            if ( function_exists( 'wp_cache_delete' ) ) {
+                wp_cache_delete( 'order-' . $order_id, 'orders' );
+                wp_cache_delete( $order_id, 'posts' );
+            }
+            $fresh = wc_get_order( $order_id );
+            if ( $fresh && $fresh->has_status( array( 'processing', 'completed' ) ) ) return;
+
             $order->save();
             $order->payment_complete( $parsed['transaction_id'] );
             $order->add_order_note( 'E-Processor callback: approved. TX: ' . $parsed['transaction_id'] );

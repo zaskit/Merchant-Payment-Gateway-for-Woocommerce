@@ -257,7 +257,6 @@ class MPG_VProcessor_2D extends WC_Payment_Gateway {
         $this->logger->log( 'Transaction ID: ' . ( $result['transactionId'] ?? 'N/A' ) );
 
         if ( $result['result']['status'] === 'approved' ) {
-            $order->payment_complete( $result['transactionId'] );
             $order->update_meta_data( '_mpg_vp2d_tx', $result['transactionId'] );
             $pct = floatval( $this->get_option( 'percentage_on_top', '' ) );
             if ( $pct > 0 ) {
@@ -265,6 +264,7 @@ class MPG_VProcessor_2D extends WC_Payment_Gateway {
             }
             $order->add_order_note( 'V-Processor 2D payment approved. TX: ' . $result['transactionId'] );
             $order->save();
+            $order->payment_complete( $result['transactionId'] );
 
             $this->logger->log( '=== VP2D PAYMENT SUCCESS ===' );
             return array( 'result' => 'success', 'redirect' => $this->get_return_url( $order ) );
