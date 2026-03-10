@@ -3,6 +3,12 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 
 class MPG_EProcessor_API {
 
+    private static function format_phone( $phone ) {
+        $phone  = trim( $phone );
+        $prefix = strpos( $phone, '+' ) === 0 ? '+' : '';
+        return $prefix . preg_replace( '/\D/', '', $phone );
+    }
+
     const PROCESS_URL = 'https://ts.secure1gateway.com/api/v2/processTx';
     const REFUND_URL  = 'https://ts.secure1gateway.com/api/v2/processRefund';
     const STATUS_URL  = 'https://ts.secure1gateway.com/api/v2/processTxGetStatus';
@@ -91,7 +97,7 @@ class MPG_EProcessor_API {
             'cust_billing_zipcode'    => $order->get_billing_postcode(),
             'cust_billing_state'      => $order->get_billing_state() ?: 'NA',
             'cust_billing_country'    => $order->get_billing_country(),
-            'cust_billing_phone'      => preg_replace( '/\D/', '', $order->get_billing_phone() ),
+            'cust_billing_phone'      => self::format_phone( $order->get_billing_phone() ),
             'transac_products_name'   => self::get_order_items_string( $order ),
             'transac_amount'          => $amount,
             'transac_currency_code'   => $order->get_currency(),
@@ -111,7 +117,7 @@ class MPG_EProcessor_API {
             $data['cust_shipping_zipcode']    = $order->get_shipping_postcode();
             $data['cust_shipping_state']      = $order->get_shipping_state() ?: 'NA';
             $data['cust_shipping_country']    = $order->get_shipping_country();
-            $data['cust_shipping_phone']      = preg_replace( '/\D/', '', $order->get_billing_phone() );
+            $data['cust_shipping_phone']      = self::format_phone( $order->get_billing_phone() );
         }
 
         return $data;

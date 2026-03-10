@@ -6,6 +6,23 @@ class MPG_VProcessor_3D extends WC_Payment_Gateway {
     use MPG_Descriptor_Trait;
     use MPG_Percentage_Fee_Trait;
 
+    private static function format_phone( $phone ) {
+        $phone  = trim( $phone );
+        $prefix = strpos( $phone, '+' ) === 0 ? '+' : '';
+        return $prefix . preg_replace( '/\D/', '', $phone );
+    }
+
+    private function get_cardholder_billing_from_post() {
+        $state_raw = sanitize_text_field( $_POST['mpg_vp3d_billing_state'] ?? '' );
+        return array(
+            'street'  => sanitize_text_field( $_POST['mpg_vp3d_billing_street'] ?? '' ),
+            'city'    => sanitize_text_field( $_POST['mpg_vp3d_billing_city'] ?? '' ),
+            'state'   => ! empty( $state_raw ) ? strtoupper( substr( $state_raw, 0, 2 ) ) : 'NA',
+            'country' => sanitize_text_field( $_POST['mpg_vp3d_billing_country'] ?? '' ),
+            'zipCode' => sanitize_text_field( $_POST['mpg_vp3d_billing_zip'] ?? '' ),
+        );
+    }
+
     private $logger;
 
     public function __construct() {
@@ -139,6 +156,36 @@ class MPG_VProcessor_3D extends WC_Payment_Gateway {
                 <label>CVV <span class="required">*</span></label>
                 <input id="mpg_vp3d_card_cvv" name="mpg_vp3d_card_cvv" class="input-text" inputmode="numeric" autocomplete="cc-csc" type="text" placeholder="CVV" maxlength="4" />
             </div>
+            <div class="mpg-billing-heading">Cardholder Billing Address</div>
+            <div class="mpg-field form-row form-row-wide">
+                <label>Street Address <span class="required">*</span></label>
+                <input id="mpg_vp3d_billing_street" name="mpg_vp3d_billing_street" class="input-text" type="text" autocomplete="address-line1" placeholder="Street address" />
+            </div>
+            <div class="mpg-row">
+                <div class="mpg-field">
+                    <label>City <span class="required">*</span></label>
+                    <input id="mpg_vp3d_billing_city" name="mpg_vp3d_billing_city" class="input-text" type="text" autocomplete="address-level2" placeholder="City" />
+                </div>
+                <div class="mpg-field">
+                    <label>State / Province <span class="required">*</span></label>
+                    <input id="mpg_vp3d_billing_state" name="mpg_vp3d_billing_state" class="input-text" type="text" autocomplete="address-level1" placeholder="e.g. MO, NY" maxlength="50" />
+                </div>
+            </div>
+            <div class="mpg-row">
+                <div class="mpg-field">
+                    <label>Country <span class="required">*</span></label>
+                    <select id="mpg_vp3d_billing_country" name="mpg_vp3d_billing_country" class="input-text" autocomplete="country">
+                        <option value="">Select country&hellip;</option>
+                        <?php foreach ( WC()->countries->get_countries() as $code => $name ) : ?>
+                            <option value="<?php echo esc_attr( $code ); ?>"<?php selected( WC()->customer ? WC()->customer->get_billing_country() : '', $code ); ?>><?php echo esc_html( $name ); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="mpg-field">
+                    <label>ZIP / Postal Code <span class="required">*</span></label>
+                    <input id="mpg_vp3d_billing_zip" name="mpg_vp3d_billing_zip" class="input-text" type="text" autocomplete="postal-code" placeholder="ZIP / Postal" maxlength="10" />
+                </div>
+            </div>
             <div class="mpg-secure-badge">
                 <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#22c55e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
                 <span>Secured with 256-bit encryption</span>
@@ -174,11 +221,28 @@ class MPG_VProcessor_3D extends WC_Payment_Gateway {
         } elseif ( ! is_numeric( $exp_year ) || strlen( $exp_year ) != 2 ) {
             $errors[] = 'Please enter a valid 2-digit expiry year.';
         }
+        if ( ! empty( $exp_month ) && is_numeric( $exp_month ) && ! empty( $exp_year ) && is_numeric( $exp_year ) ) {
+            $now_month = (int) gmdate( 'n' );
+            $now_year  = (int) gmdate( 'y' );
+            if ( (int) $exp_year < $now_year || ( (int) $exp_year === $now_year && (int) $exp_month < $now_month ) ) {
+                $errors[] = 'Your card has expired. Please use a valid card.';
+            }
+        }
         if ( empty( $cvv ) ) {
             $errors[] = 'CVV is required.';
         } elseif ( ! is_numeric( $cvv ) || strlen( $cvv ) < 3 || strlen( $cvv ) > 4 ) {
             $errors[] = 'Please enter a valid CVV (3 or 4 digits).';
         }
+
+        $b_street  = sanitize_text_field( $_POST['mpg_vp3d_billing_street'] ?? '' );
+        $b_city    = sanitize_text_field( $_POST['mpg_vp3d_billing_city'] ?? '' );
+        $b_country = sanitize_text_field( $_POST['mpg_vp3d_billing_country'] ?? '' );
+        $b_zip     = sanitize_text_field( $_POST['mpg_vp3d_billing_zip'] ?? '' );
+
+        if ( empty( $b_street ) )  { $errors[] = 'Cardholder billing street address is required.'; }
+        if ( empty( $b_city ) )    { $errors[] = 'Cardholder billing city is required.'; }
+        if ( empty( $b_country ) || strlen( $b_country ) !== 2 ) { $errors[] = 'Please select a valid billing country.'; }
+        if ( empty( $b_zip ) )     { $errors[] = 'Cardholder billing ZIP / postal code is required.'; }
 
         foreach ( $errors as $err ) {
             wc_add_notice( $err, 'error' );
@@ -213,29 +277,24 @@ class MPG_VProcessor_3D extends WC_Payment_Gateway {
         $request_body = array(
             'serviceSecurity' => array( 'merchantId' => intval( $this->merchant_id ) ),
             'transactionDetails' => array(
-                'amount'            => floatval( $order->get_total() ),
+                'amount'            => number_format( (float) $order->get_total(), 2, '.', '' ),
                 'currency'          => $order->get_currency(),
                 'externalReference' => $attempt_ref,
             ),
             'cardDetails' => array(
                 'cardHolderName'  => $card_holder,
                 'cardNumber'      => $card_number,
-                'cvv'             => intval( $cvv ),
+                'cvv'             => $cvv,
                 'expirationMonth' => sprintf( '%02d', $exp_month ),
                 'expirationYear'  => intval( $exp_year ),
             ),
             'payerDetails' => array(
+                'username'  => sanitize_user( $order->get_billing_email(), true ),
                 'firstName' => $order->get_billing_first_name(),
                 'lastName'  => $order->get_billing_last_name(),
                 'email'     => $order->get_billing_email(),
-                'phone'     => preg_replace( '/\D/', '', $order->get_billing_phone() ),
-                'address'   => array(
-                    'street'  => $order->get_billing_address_1(),
-                    'city'    => $order->get_billing_city(),
-                    'state'   => $order->get_billing_state(),
-                    'country' => $order->get_billing_country(),
-                    'zipCode' => $order->get_billing_postcode(),
-                ),
+                'phone'     => self::format_phone( $order->get_billing_phone() ),
+                'address'   => $this->get_cardholder_billing_from_post(),
             ),
         );
 
