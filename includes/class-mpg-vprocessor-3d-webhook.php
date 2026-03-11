@@ -431,25 +431,27 @@ class MPG_VProcessor_3D_Webhook {
                 exit;
             }
 
-            // For DECLINED/REJECTED/FAILED: do NOT trust the 3DS return result.
-            // The 3DS return URL is just a customer redirect — not the source of truth.
-            // The definitive status comes via webhook. Log it and fall through to polling.
+            // For DECLINED/REJECTED/FAILED: trust the 3DS return result and fail immediately.
+            // Waiting for the webhook leaves the customer staring at a loader for up to 90 seconds.
             if ( in_array( $threed_status, array( 'DECLINED', 'REJECTED', 'FAILED' ), true ) ) {
-                if ( $debug ) $logger->debug( '3DS return says ' . $threed_status . ' — ignoring, will wait for webhook as source of truth', $ctx );
-                $order->add_order_note( 'VP3D: 3DS return status: ' . $threed_status . '. Awaiting webhook for definitive result.' );
-                $order->update_meta_data( '_mpg_vp3d_3ds_return_status', $threed_status );
+                if ( $debug ) $logger->debug( '3DS return: ' . $threed_status . ' — failing order and redirecting to checkout', $ctx );
+                $error_detail = isset( $threed_result['responseMessage'] ) ? sanitize_text_field( $threed_result['responseMessage'] ) : $threed_status;
+                $order->update_meta_data( '_mpg_vp3d_3ds_status', $threed_status );
+                $order->update_meta_data( '_mpg_vp3d_webhook_status', strtolower( $threed_status ) );
                 $order->save();
+                $order->update_status( 'failed', 'VP3D: 3DS verification ' . strtolower( $threed_status ) . '. ' . $error_detail );
+                wc_add_notice( 'Your card verification was not successful. Please try again or use a different payment method.', 'error' );
+                wp_redirect( wc_get_checkout_url() );
+                exit;
             }
         }
 
-        // Set order to on-hold and redirect to thank-you page with polling overlay
-        // The webhook will deliver the final approved/declined status
+        // No 3DS result or unknown status — fall back to short polling for webhook
         if ( $order->has_status( 'pending' ) ) {
             $order->update_status( 'on-hold', 'Customer returned from 3DS challenge. Awaiting webhook confirmation.' );
             if ( $debug ) $logger->debug( 'Order set to on-hold, awaiting webhook after 3DS return', $ctx );
         }
 
-        // Redirect to thank-you page with polling so customer waits for webhook
         $polling_url = add_query_arg( array(
             'mpg_vp3d_poll' => '1',
             'order_id'      => $order_id,

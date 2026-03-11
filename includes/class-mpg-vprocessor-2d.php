@@ -61,6 +61,9 @@ class MPG_VProcessor_2D extends WC_Payment_Gateway {
 
         // Percentage fee hooks
         $this->init_percentage_fee_hooks();
+
+        // Block checkout support
+        add_action( 'woocommerce_rest_checkout_process_payment_with_context', array( $this, 'process_payment_for_block' ), 10, 2 );
     }
 
     public function init_form_fields() {
@@ -336,6 +339,26 @@ class MPG_VProcessor_2D extends WC_Payment_Gateway {
         $order->update_status( 'failed', 'VP2D: [' . $error_code . '] ' . $error_msg );
         wc_add_notice( MPG_VProcessor_API::friendly_error( $error_code ), 'error' );
         return array( 'result' => 'failure' );
+    }
+
+    /* ─── Block checkout bridge ─── */
+    public function process_payment_for_block( $context, &$result ) {
+        if ( $context->payment_method !== $this->id ) return;
+        $pd = isset( $context->payment_data ) ? $context->payment_data : array();
+        $map = array(
+            'mpg_vp2d_card_name'        => 'mpg_vp2d_card_name',
+            'mpg_vp2d_card_number'      => 'mpg_vp2d_card_number',
+            'mpg_vp2d_expiry'           => 'mpg_vp2d_expiry',
+            'mpg_vp2d_cvv'              => 'mpg_vp2d_cvv',
+            'mpg_vp2d_billing_street'   => 'mpg_vp2d_billing_street',
+            'mpg_vp2d_billing_city'     => 'mpg_vp2d_billing_city',
+            'mpg_vp2d_billing_state'    => 'mpg_vp2d_billing_state',
+            'mpg_vp2d_billing_country'  => 'mpg_vp2d_billing_country',
+            'mpg_vp2d_billing_zip'      => 'mpg_vp2d_billing_zip',
+        );
+        foreach ( $map as $k => $v ) {
+            if ( isset( $pd[ $k ] ) ) $_POST[ $v ] = sanitize_text_field( $pd[ $k ] );
+        }
     }
 
     public function process_refund( $order_id, $amount = null, $reason = '' ) {

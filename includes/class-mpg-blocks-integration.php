@@ -52,6 +52,16 @@ class MPG_Blocks_Integration extends AbstractPaymentMethodType {
             'has_fields'  => $this->has_card_fields(),
         );
 
+        // Pass countries list for billing address fields
+        if ( $this->has_card_fields() && function_exists( 'WC' ) ) {
+            $countries = array();
+            foreach ( WC()->countries->get_countries() as $code => $name ) {
+                $countries[] = array( 'code' => $code, 'name' => $name );
+            }
+            $data['countries']      = $countries;
+            $data['defaultCountry'] = WC()->customer ? WC()->customer->get_billing_country() : '';
+        }
+
         return $data;
     }
 

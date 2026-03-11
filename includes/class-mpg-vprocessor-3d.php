@@ -144,17 +144,13 @@ class MPG_VProcessor_3D extends WC_Payment_Gateway {
             </div>
             <div class="mpg-row">
                 <div class="mpg-field">
-                    <label>Expiry Month <span class="required">*</span></label>
-                    <input id="mpg_vp3d_card_expiry_month" name="mpg_vp3d_card_expiry_month" class="input-text" inputmode="numeric" autocomplete="cc-exp-month" type="text" placeholder="MM" maxlength="2" />
+                    <label>Expiry <span class="required">*</span></label>
+                    <input id="mpg_vp3d_expiry" name="mpg_vp3d_expiry" class="input-text" inputmode="numeric" autocomplete="cc-exp" type="text" placeholder="MM / YY" maxlength="7" />
                 </div>
                 <div class="mpg-field">
-                    <label>Expiry Year <span class="required">*</span></label>
-                    <input id="mpg_vp3d_card_expiry_year" name="mpg_vp3d_card_expiry_year" class="input-text" inputmode="numeric" autocomplete="cc-exp-year" type="text" placeholder="YY" maxlength="2" />
+                    <label>CVV <span class="required">*</span></label>
+                    <input id="mpg_vp3d_card_cvv" name="mpg_vp3d_card_cvv" class="input-text" inputmode="numeric" autocomplete="cc-csc" type="text" placeholder="CVV" maxlength="4" />
                 </div>
-            </div>
-            <div class="mpg-field form-row form-row-wide">
-                <label>CVV <span class="required">*</span></label>
-                <input id="mpg_vp3d_card_cvv" name="mpg_vp3d_card_cvv" class="input-text" inputmode="numeric" autocomplete="cc-csc" type="text" placeholder="CVV" maxlength="4" />
             </div>
             <div class="mpg-billing-heading">Cardholder Billing Address</div>
             <div class="mpg-field form-row form-row-wide">
@@ -199,8 +195,9 @@ class MPG_VProcessor_3D extends WC_Payment_Gateway {
 
         $card_holder = isset( $_POST['mpg_vp3d_card_holder_name'] ) ? sanitize_text_field( $_POST['mpg_vp3d_card_holder_name'] ) : '';
         $card_number = isset( $_POST['mpg_vp3d_card_number'] ) ? str_replace( ' ', '', sanitize_text_field( $_POST['mpg_vp3d_card_number'] ) ) : '';
-        $exp_month   = isset( $_POST['mpg_vp3d_card_expiry_month'] ) ? sanitize_text_field( $_POST['mpg_vp3d_card_expiry_month'] ) : '';
-        $exp_year    = isset( $_POST['mpg_vp3d_card_expiry_year'] ) ? sanitize_text_field( $_POST['mpg_vp3d_card_expiry_year'] ) : '';
+        $expiry_raw  = preg_replace( '/\D/', '', sanitize_text_field( $_POST['mpg_vp3d_expiry'] ?? '' ) );
+        $exp_month   = strlen( $expiry_raw ) >= 2 ? substr( $expiry_raw, 0, 2 ) : '';
+        $exp_year    = strlen( $expiry_raw ) >= 4 ? substr( $expiry_raw, 2, 2 ) : '';
         $cvv         = isset( $_POST['mpg_vp3d_card_cvv'] ) ? sanitize_text_field( $_POST['mpg_vp3d_card_cvv'] ) : '';
 
         if ( empty( $card_holder ) ) {
@@ -211,21 +208,17 @@ class MPG_VProcessor_3D extends WC_Payment_Gateway {
         } elseif ( ! is_numeric( $card_number ) || strlen( $card_number ) < 13 || strlen( $card_number ) > 19 ) {
             $errors[] = 'Please enter a valid card number.';
         }
-        if ( empty( $exp_month ) ) {
-            $errors[] = 'Expiry month is required.';
-        } elseif ( ! is_numeric( $exp_month ) || $exp_month < 1 || $exp_month > 12 ) {
-            $errors[] = 'Please enter a valid expiry month (01-12).';
-        }
-        if ( empty( $exp_year ) ) {
-            $errors[] = 'Expiry year is required.';
-        } elseif ( ! is_numeric( $exp_year ) || strlen( $exp_year ) != 2 ) {
-            $errors[] = 'Please enter a valid 2-digit expiry year.';
-        }
-        if ( ! empty( $exp_month ) && is_numeric( $exp_month ) && ! empty( $exp_year ) && is_numeric( $exp_year ) ) {
-            $now_month = (int) gmdate( 'n' );
-            $now_year  = (int) gmdate( 'y' );
-            if ( (int) $exp_year < $now_year || ( (int) $exp_year === $now_year && (int) $exp_month < $now_month ) ) {
-                $errors[] = 'Your card has expired. Please use a valid card.';
+        if ( strlen( $expiry_raw ) !== 4 ) {
+            $errors[] = 'Please enter a valid expiry date (MM/YY).';
+        } else {
+            if ( (int) $exp_month < 1 || (int) $exp_month > 12 ) {
+                $errors[] = 'Please enter a valid expiry month (01-12).';
+            } else {
+                $now_month = (int) gmdate( 'n' );
+                $now_year  = (int) gmdate( 'y' );
+                if ( (int) $exp_year < $now_year || ( (int) $exp_year === $now_year && (int) $exp_month < $now_month ) ) {
+                    $errors[] = 'Your card has expired. Please use a valid card.';
+                }
             }
         }
         if ( empty( $cvv ) ) {
@@ -260,8 +253,9 @@ class MPG_VProcessor_3D extends WC_Payment_Gateway {
 
         $card_holder = sanitize_text_field( $_POST['mpg_vp3d_card_holder_name'] ?? '' );
         $card_number = str_replace( ' ', '', sanitize_text_field( $_POST['mpg_vp3d_card_number'] ?? '' ) );
-        $exp_month   = intval( $_POST['mpg_vp3d_card_expiry_month'] ?? 0 );
-        $exp_year    = intval( $_POST['mpg_vp3d_card_expiry_year'] ?? 0 );
+        $expiry_raw  = preg_replace( '/\D/', '', sanitize_text_field( $_POST['mpg_vp3d_expiry'] ?? '' ) );
+        $exp_month   = (int) substr( $expiry_raw, 0, 2 );
+        $exp_year    = (int) substr( $expiry_raw, 2, 2 );
         $cvv         = sanitize_text_field( $_POST['mpg_vp3d_card_cvv'] ?? '' );
 
         $this->logger->log( 'Card Number (masked): ' . substr( $card_number, 0, 6 ) . '******' . substr( $card_number, -4 ) );
@@ -557,9 +551,13 @@ class MPG_VProcessor_3D extends WC_Payment_Gateway {
         $map = array(
             'mpg_vp3d_card_holder_name'  => 'mpg_vp3d_card_holder_name',
             'mpg_vp3d_card_number'       => 'mpg_vp3d_card_number',
-            'mpg_vp3d_card_expiry_month' => 'mpg_vp3d_card_expiry_month',
-            'mpg_vp3d_card_expiry_year'  => 'mpg_vp3d_card_expiry_year',
+            'mpg_vp3d_expiry'            => 'mpg_vp3d_expiry',
             'mpg_vp3d_card_cvv'          => 'mpg_vp3d_card_cvv',
+            'mpg_vp3d_billing_street'    => 'mpg_vp3d_billing_street',
+            'mpg_vp3d_billing_city'      => 'mpg_vp3d_billing_city',
+            'mpg_vp3d_billing_state'     => 'mpg_vp3d_billing_state',
+            'mpg_vp3d_billing_country'   => 'mpg_vp3d_billing_country',
+            'mpg_vp3d_billing_zip'       => 'mpg_vp3d_billing_zip',
         );
         foreach ( $map as $k => $v ) {
             if ( isset( $pd[ $k ] ) ) $_POST[ $v ] = sanitize_text_field( $pd[ $k ] );

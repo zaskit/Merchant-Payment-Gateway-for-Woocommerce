@@ -42,6 +42,9 @@ class MPG_EProcessor_2D extends WC_Payment_Gateway {
 
         $this->init_descriptor_hooks();
         $this->init_percentage_fee_hooks();
+
+        // Block checkout support
+        add_action( 'woocommerce_rest_checkout_process_payment_with_context', array( $this, 'process_payment_for_block' ), 10, 2 );
     }
 
     public function get_icon() {
@@ -106,6 +109,21 @@ class MPG_EProcessor_2D extends WC_Payment_Gateway {
             </div>
         </fieldset>
         <?php
+    }
+
+    /* ─── Block checkout bridge ─── */
+    public function process_payment_for_block( $context, &$result ) {
+        if ( $context->payment_method !== $this->id ) return;
+        $pd = isset( $context->payment_data ) ? $context->payment_data : array();
+        $map = array(
+            'mpg_ep2d_card_name'   => 'mpg_ep2d_card_name',
+            'mpg_ep2d_card_number' => 'mpg_ep2d_card_number',
+            'mpg_ep2d_expiry'      => 'mpg_ep2d_expiry',
+            'mpg_ep2d_cvv'         => 'mpg_ep2d_cvv',
+        );
+        foreach ( $map as $k => $v ) {
+            if ( isset( $pd[ $k ] ) ) $_POST[ $v ] = sanitize_text_field( $pd[ $k ] );
+        }
     }
 
     public function process_payment( $order_id ) {

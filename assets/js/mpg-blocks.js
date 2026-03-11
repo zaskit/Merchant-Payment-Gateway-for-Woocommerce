@@ -33,6 +33,13 @@
             row: [
                 { name: 'expiry', label: 'Expiry', placeholder: 'MM / YY', maxLength: 7, inputMode: 'numeric', autocomplete: 'cc-exp' },
                 { name: 'cvv', label: 'CVC', placeholder: '•••', maxLength: 3, inputMode: 'numeric', autocomplete: 'cc-csc' },
+            ],
+            billing: [
+                { name: 'billing_street', label: 'Street Address', placeholder: 'Street address', type: 'text', autocomplete: 'address-line1' },
+                { name: 'billing_city', label: 'City', placeholder: 'City', type: 'text', autocomplete: 'address-level2', half: true },
+                { name: 'billing_state', label: 'State / Province', placeholder: 'e.g. MO, NY', type: 'text', autocomplete: 'address-level1', maxLength: 50, half: true },
+                { name: 'billing_country', label: 'Country', type: 'select', autocomplete: 'country', half: true },
+                { name: 'billing_zip', label: 'ZIP / Postal Code', placeholder: 'ZIP / Postal', type: 'text', autocomplete: 'postal-code', maxLength: 10, half: true },
             ]
         },
         mpg_vprocessor_3d: {
@@ -41,10 +48,16 @@
                 { name: 'card_number', label: 'Card Number', placeholder: '•••• •••• •••• ••••', type: 'text', autocomplete: 'cc-number', maxLength: 19, inputMode: 'numeric' },
             ],
             row: [
-                { name: 'card_expiry_month', label: 'Expiry Month', placeholder: 'MM', maxLength: 2, inputMode: 'numeric', autocomplete: 'cc-exp-month' },
-                { name: 'card_expiry_year', label: 'Expiry Year', placeholder: 'YY', maxLength: 2, inputMode: 'numeric', autocomplete: 'cc-exp-year' },
+                { name: 'expiry', label: 'Expiry', placeholder: 'MM / YY', maxLength: 7, inputMode: 'numeric', autocomplete: 'cc-exp' },
+                { name: 'card_cvv', label: 'CVV', placeholder: 'CVV', maxLength: 4, inputMode: 'numeric', autocomplete: 'cc-csc' },
             ],
-            cvv: { name: 'card_cvv', label: 'CVV', placeholder: 'CVV', maxLength: 4, inputMode: 'numeric', autocomplete: 'cc-csc' }
+            billing: [
+                { name: 'billing_street', label: 'Street Address', placeholder: 'Street address', type: 'text', autocomplete: 'address-line1' },
+                { name: 'billing_city', label: 'City', placeholder: 'City', type: 'text', autocomplete: 'address-level2', half: true },
+                { name: 'billing_state', label: 'State / Province', placeholder: 'e.g. MO, NY', type: 'text', autocomplete: 'address-level1', maxLength: 50, half: true },
+                { name: 'billing_country', label: 'Country', type: 'select', autocomplete: 'country', half: true },
+                { name: 'billing_zip', label: 'ZIP / Postal Code', placeholder: 'ZIP / Postal', type: 'text', autocomplete: 'postal-code', maxLength: 10, half: true },
+            ]
         },
         mpg_eprocessor_2d: {
             fields: [
@@ -196,6 +209,62 @@
                         })
                     )
                 );
+            }
+
+            // Billing address fields
+            if(config.billing){
+                var countries = dataVar.countries || [];
+                var defaultCountry = dataVar.defaultCountry || '';
+
+                elements.push(createElement('div', {key:'billing-heading', className:'mpg-block-billing-heading', style:{marginTop:'16px',marginBottom:'8px',fontWeight:'600',fontSize:'14px',color:'#374151'}}, 'Cardholder Billing Address'));
+
+                var halfFields = [];
+                config.billing.forEach(function(bf, bi){
+                    var fieldEl;
+                    if(bf.type === 'select'){
+                        var options = [createElement('option', {key:'empty', value:''}, 'Select country\u2026')];
+                        countries.forEach(function(c){
+                            options.push(createElement('option', {key:c.code, value:c.code}, c.name));
+                        });
+                        fieldEl = createElement('div', {key:'b'+bi, className:'mpg-block-field'},
+                            createElement('label', null, bf.label),
+                            createElement('select', {
+                                autoComplete: bf.autocomplete || undefined,
+                                defaultValue: defaultCountry,
+                                onChange: function(e){
+                                    stateRef.current[bf.name] = e.target.value;
+                                },
+                                ref: function(el){
+                                    if(el && defaultCountry) stateRef.current[bf.name] = defaultCountry;
+                                }
+                            }, options)
+                        );
+                    } else {
+                        fieldEl = createElement('div', {key:'b'+bi, className:'mpg-block-field'},
+                            createElement('label', null, bf.label),
+                            createElement('input', {
+                                type: bf.type || 'text',
+                                placeholder: bf.placeholder || '',
+                                maxLength: bf.maxLength || undefined,
+                                autoComplete: bf.autocomplete || undefined,
+                                onInput: onInput(bf.name, null)
+                            })
+                        );
+                    }
+
+                    if(bf.half){
+                        halfFields.push(fieldEl);
+                        if(halfFields.length === 2){
+                            elements.push(createElement('div', {key:'brow'+bi, className:'mpg-block-row'}, halfFields));
+                            halfFields = [];
+                        }
+                    } else {
+                        elements.push(fieldEl);
+                    }
+                });
+                if(halfFields.length > 0){
+                    elements.push(createElement('div', {key:'brow-last', className:'mpg-block-row'}, halfFields));
+                }
             }
 
             // Secure badge
