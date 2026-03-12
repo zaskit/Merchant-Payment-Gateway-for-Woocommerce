@@ -45,6 +45,13 @@ class MPG_EProcessor_2D extends WC_Payment_Gateway {
 
         // Block checkout support
         add_action( 'woocommerce_rest_checkout_process_payment_with_context', array( $this, 'process_payment_for_block' ), 10, 2 );
+
+        // AJAX polling for PEND status
+        add_action( 'wp_ajax_mpg_ep2d_poll_status', array( $this, 'ajax_poll_status' ) );
+        add_action( 'wp_ajax_nopriv_mpg_ep2d_poll_status', array( $this, 'ajax_poll_status' ) );
+
+        // Polling overlay on thank-you page
+        add_action( 'woocommerce_before_thankyou', array( $this, 'maybe_show_polling_overlay' ), 1 );
     }
 
     public function get_icon() {
@@ -212,9 +219,19 @@ class MPG_EProcessor_2D extends WC_Payment_Gateway {
             }
 
             if ( $parsed['is_pending'] ) {
-                $order->update_status( 'on-hold', 'Payment pending. TX: ' . $parsed['transaction_id'] );
+                $order->update_status( 'pending', 'Payment pending, awaiting callback. TX: ' . $parsed['transaction_id'] );
+                $order->update_meta_data( '_mpg_ep2d_awaiting_callback', 'yes' );
+                $order->update_meta_data( '_mpg_ep2d_callback_status', 'waiting' );
                 $order->save();
-                return array( 'result' => 'success', 'redirect' => $this->get_return_url( $order ) );
+                WC()->cart->empty_cart();
+
+                $polling_url = add_query_arg( array(
+                    'mpg_ep2d_poll' => '1',
+                    'order_id'      => $order_id,
+                    'key'           => $order->get_order_key(),
+                ), $order->get_checkout_order_received_url() );
+
+                return array( 'result' => 'success', 'redirect' => $polling_url );
             }
 
             // Failed
@@ -301,13 +318,16 @@ class MPG_EProcessor_2D extends WC_Payment_Gateway {
             $fresh = wc_get_order( $order_id );
             if ( $fresh && $fresh->has_status( array( 'processing', 'completed' ) ) ) return;
 
+            $order->update_meta_data( '_mpg_ep2d_callback_status', 'approved' );
             $order->save();
             $order->payment_complete( $parsed['transaction_id'] );
             $order->add_order_note( 'E-Processor callback: approved. TX: ' . $parsed['transaction_id'] );
         } elseif ( $parsed['is_pending'] ) {
+            $order->update_meta_data( '_mpg_ep2d_callback_status', 'waiting' );
             $order->update_status( 'on-hold', 'Payment pending via callback. TX: ' . $parsed['transaction_id'] );
             $order->save();
         } else {
+            $order->update_meta_data( '_mpg_ep2d_callback_status', 'declined' );
             $order->update_status( 'failed', 'Payment failed via callback: ' . $parsed['description'] );
             $order->save();
         }
@@ -371,5 +391,82 @@ class MPG_EProcessor_2D extends WC_Payment_Gateway {
             wp_redirect( $order->get_cancel_order_url() );
         }
         exit;
+    }
+
+    /* ─── AJAX Polling ─── */
+    public function ajax_poll_status() {
+        check_ajax_referer( 'mpg_ep2d_poll_nonce', 'nonce' );
+
+        $order_id  = absint( $_POST['order_id'] ?? 0 );
+        $order_key = sanitize_text_field( $_POST['order_key'] ?? '' );
+
+        if ( ! $order_id || ! $order_key ) wp_send_json_error();
+
+        $order = wc_get_order( $order_id );
+        if ( ! $order || $order->get_order_key() !== $order_key ) wp_send_json_error();
+
+        // Clear cache for HPOS and legacy post storage
+        if ( function_exists( 'wp_cache_delete' ) ) {
+            wp_cache_delete( 'order-' . $order_id, 'orders' );
+            wp_cache_delete( $order_id, 'posts' );
+        }
+        $order = wc_get_order( $order_id );
+
+        $callback_status = $order->get_meta( '_mpg_ep2d_callback_status' );
+
+        if ( $callback_status === 'approved' || $order->has_status( array( 'processing', 'completed' ) ) ) {
+            wp_send_json_success( array( 'status' => 'approved', 'redirect_url' => $this->get_return_url( $order ) ) );
+        }
+        if ( in_array( $callback_status, array( 'declined', 'error' ) ) || $order->has_status( 'failed' ) ) {
+            wp_send_json_success( array( 'status' => 'failed', 'redirect_url' => wc_get_checkout_url() ) );
+        }
+
+        wp_send_json_success( array( 'status' => 'waiting' ) );
+    }
+
+    /* ─── Polling overlay ─── */
+    public function maybe_show_polling_overlay( $order_id ) {
+        if ( ! isset( $_GET['mpg_ep2d_poll'] ) || $_GET['mpg_ep2d_poll'] !== '1' ) return;
+
+        $order = wc_get_order( $order_id );
+        if ( ! $order || $order->get_payment_method() !== $this->id ) return;
+
+        $order_key = isset( $_GET['key'] ) ? sanitize_text_field( $_GET['key'] ) : $order->get_order_key();
+
+        wp_enqueue_script( 'mpg-ep2d-polling', MPG_PLUGIN_URL . 'assets/js/mpg-ep2d-polling.js', array( 'jquery' ), MPG_VERSION, true );
+        wp_localize_script( 'mpg-ep2d-polling', 'mpg_ep2d_polling', array(
+            'ajax_url'     => admin_url( 'admin-ajax.php' ),
+            'nonce'        => wp_create_nonce( 'mpg_ep2d_poll_nonce' ),
+            'order_id'     => $order_id,
+            'order_key'    => $order_key,
+            'timeout'      => 90,
+            'interval'     => 3000,
+            'thankyou_url' => $this->get_return_url( $order ),
+            'checkout_url' => wc_get_checkout_url(),
+        ));
+
+        ?>
+        <div id="mpg-ep2d-polling-overlay" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(255,255,255,0.97);z-index:999999;display:flex;align-items:center;justify-content:center;flex-direction:column;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+            <div style="text-align:center;max-width:400px;padding:40px;">
+                <div id="mpg-ep2d-spinner" style="margin:0 auto 24px;">
+                    <svg width="48" height="48" viewBox="0 0 48 48" style="animation:mpg-spin 1s linear infinite;">
+                        <circle cx="24" cy="24" r="20" fill="none" stroke="#e5e7eb" stroke-width="4"/>
+                        <circle cx="24" cy="24" r="20" fill="none" stroke="#3b82f6" stroke-width="4" stroke-dasharray="80" stroke-dashoffset="60" stroke-linecap="round"/>
+                    </svg>
+                </div>
+                <h2 id="mpg-ep2d-title" style="margin:0 0 8px;font-size:20px;font-weight:600;color:#111827;">Processing your payment</h2>
+                <p id="mpg-ep2d-message" style="margin:0 0 24px;font-size:15px;color:#6b7280;line-height:1.5;">Please wait while we securely verify your payment. This may take up to a minute.</p>
+                <p id="mpg-ep2d-subtitle" style="margin:0;font-size:13px;color:#9ca3af;">Do not close this window or press back.</p>
+                <div id="mpg-ep2d-progress" style="margin-top:24px;width:100%;height:4px;background:#e5e7eb;border-radius:2px;overflow:hidden;">
+                    <div id="mpg-ep2d-progress-bar" style="height:100%;width:0%;background:#3b82f6;border-radius:2px;transition:width 3s linear;"></div>
+                </div>
+                <div id="mpg-ep2d-timeout" style="display:none;margin-top:24px;">
+                    <p style="font-size:14px;color:#f59e0b;margin:0 0 12px;">Your payment is still being processed.</p>
+                    <p style="font-size:13px;color:#6b7280;margin:0;">You will receive an email confirmation once your payment is confirmed. You may safely close this page.</p>
+                </div>
+            </div>
+        </div>
+        <style>@keyframes mpg-spin { from { transform:rotate(0deg); } to { transform:rotate(360deg); } }</style>
+        <?php
     }
 }
