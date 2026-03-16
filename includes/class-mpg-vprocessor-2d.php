@@ -184,6 +184,13 @@ class MPG_VProcessor_2D extends WC_Payment_Gateway {
             $errors[] = 'Card number is required.';
         } elseif ( strlen( $card_number ) < 13 || strlen( $card_number ) > 19 ) {
             $errors[] = 'Please enter a valid card number.';
+        } else {
+            $two  = (int) substr( $card_number, 0, 2 );
+            $four = (int) substr( $card_number, 0, 4 );
+            $is_mc = ( $two >= 51 && $two <= 55 ) || ( $four >= 2221 && $four <= 2720 );
+            if ( ! $is_mc ) {
+                $errors[] = 'Only Mastercard is accepted on this gateway. Please use a Mastercard.';
+            }
         }
         if ( strlen( $expiry ) !== 4 ) {
             $errors[] = 'Please enter a valid expiry date (MM/YY).';

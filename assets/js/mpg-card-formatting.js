@@ -26,6 +26,38 @@
         });
     }
 
+    function isMastercard(digits){
+        if(digits.length<2) return null; // not enough digits yet
+        var two = parseInt(digits.substring(0,2),10);
+        if(two>=51 && two<=55) return true;
+        if(digits.length>=4){
+            var four = parseInt(digits.substring(0,4),10);
+            if(four>=2221 && four<=2720) return true;
+        }
+        return false;
+    }
+
+    function setupVp2dMastercardCheck(input){
+        var notice = document.createElement('div');
+        notice.className = 'mpg-mc-notice';
+        notice.style.cssText = 'color:#b91c1c;font-size:13px;margin-top:4px;display:none;';
+        notice.textContent = 'Only Mastercard is accepted on this gateway. Please use a Mastercard.';
+        input.parentNode.appendChild(notice);
+
+        input.addEventListener('input',function(){
+            var digits = this.value.replace(/\D/g,'');
+            if(digits.length<2){ notice.style.display='none'; return; }
+            var mc = isMastercard(digits);
+            if(mc===false){
+                notice.style.display='block';
+                input.style.borderColor='#b91c1c';
+            } else {
+                notice.style.display='none';
+                input.style.borderColor='';
+            }
+        });
+    }
+
     function init(){
         // Card number fields (space-formatted)
         document.querySelectorAll([
@@ -34,6 +66,9 @@
             'input[name="mpg_ep2d_card_number"]',
             'input[name="mpg_ep3d_card_number"]'
         ].join(',')).forEach(formatCardNumber);
+
+        // VP2D Mastercard-only check
+        document.querySelectorAll('input[name="mpg_vp2d_card_number"]').forEach(setupVp2dMastercardCheck);
 
         // Expiry fields (MM / YY format)
         document.querySelectorAll([
